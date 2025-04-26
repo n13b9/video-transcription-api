@@ -10,6 +10,7 @@
     // --- Other relevant settings ---
     "rootDir": "./src",
     "outDir": "./dist",
+    "sourceMap": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "strict": true,
