@@ -1,12 +1,13 @@
 {
   "name": "videtranscrip",
   "version": "1.0.0",
-  "main": "index.js",
-  "type": "module",
+  "main": "dist/index.js",
   "scripts": {
-    "start": "ts-node src/index.ts",
-    "start1": "ts-node src/worker.ts",
-    "dev": "nodemon --watch 'src/**/*.ts' --exec ts-node src/index.ts",
+    "start": "node dist/index.js",
+    "start1": "node dist/worker.js",
+    "dev:api": "nodemon src/index.ts",
+    "dev:worker": "nodemon src/worker.ts",
+    "dev": "npm-run-all --parallel dev:*",
     "build": "tsc"
   },
   "keywords": [],
@@ -15,21 +16,19 @@
   "description": "",
   "devDependencies": {
     "@types/bull": "^4.10.4",
-    "@types/node": "^22.14.1",
+    "@types/node": "^20.12.12",
     "nodemon": "^3.1.9",
+    "npm-run-all": "^4.1.5",
     "ts-node": "^10.9.2",
-    "typescript": "^5.8.3"
+    "typescript": "^5.3.3"
   },
   "dependencies": {
-    "@hono/node-server": "^1.14.1",
-    "axios": "^1.8.4",
-    "bull": "^4.16.5",
-    "bullmq": "^5.49.2",
-    "dotenv": "^16.5.0",
-    "hono": "^4.7.7",
-    "ioredis": "^5.6.1",
-    "youtubei.js": "^13.4.0",
-    "yt-dlp-wrap": "^2.3.12",
-    "ytdl-core": "^4.11.5"
+    "@hono/node-server": "^1.11.1",
+    "axios": "^1.7.2",
+    "bullmq": "^5.7.8",
+    "dotenv": "^16.4.5",
+    "form-data": "^4.0.0",
+    "hono": "^4.3.7",
+    "ioredis": "^5.4.1"
   }
 }
