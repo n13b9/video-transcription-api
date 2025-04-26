@@ -3,12 +3,25 @@ import { Redis } from "ioredis";
 
 const QUEUE_NAME = "transcriptionQueue";
 
+console.log(`[Queue Setup] Checking environment variables...`);
+console.log(
+  `[Queue Setup] process.env.REDIS_URL: ${
+    process.env.REDIS_URL ? "SET" : "NOT SET"
+  }`
+);
+
 const redisConnection = new Redis({
   ...(process.env.REDIS_URL
     ? { connectionString: process.env.REDIS_URL }
     : { host: "127.0.0.1", port: 6379 }),
   maxRetriesPerRequest: null,
 });
+
+console.log(
+  `[Queue Setup] Attempting Redis connection with options: ${
+    process.env.REDIS_URL ? "Using REDIS_URL" : "Using localhost default"
+  }`
+);
 
 redisConnection.on("error", (err) => {
   console.error("Redis connection error:", err);
