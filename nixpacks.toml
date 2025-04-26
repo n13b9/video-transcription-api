@@ -1,6 +1,4 @@
 [phases.setup]
 # Installs system packages using Nix
-nixPkgs = ["ffmpeg", "yt-dlp"]
-
-# You can add other packages here if needed, separated by spaces
-# e.g., nixPkgs = ["...", "ffmpeg", "yt-dlp"]
+# Add nodejs here
+nixPkgs = ["nodejs", "ffmpeg", "yt-dlp"]
