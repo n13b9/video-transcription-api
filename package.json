@@ -1,0 +1,35 @@
+{
+  "name": "videtranscrip",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "ts-node src/index.ts",
+    "start1": "ts-node src/worker.ts",
+    "dev": "nodemon --watch 'src/**/*.ts' --exec ts-node src/index.ts",
+    "build": "tsc"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@types/bull": "^4.10.4",
+    "@types/node": "^22.14.1",
+    "nodemon": "^3.1.9",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.1",
+    "axios": "^1.8.4",
+    "bull": "^4.16.5",
+    "bullmq": "^5.49.2",
+    "dotenv": "^16.5.0",
+    "hono": "^4.7.7",
+    "ioredis": "^5.6.1",
+    "youtubei.js": "^13.4.0",
+    "yt-dlp-wrap": "^2.3.12",
+    "ytdl-core": "^4.11.5"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    // --- Key changes for ESM ---
+    "module": "NodeNext", // Or ESNext, ES2022, etc. NodeNext is often best.
+    "moduleResolution": "NodeNext", // Align with module. NodeNext or Node16.
+    "target": "ES2022", // Update target to a more modern version
+    "allowImportingTsExtensions": true, // <-- Add this line
+    "noEmit": true,
+
+    // --- Other relevant settings ---
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "skipLibCheck": true
+
+    // --- Optional: Add if needed ---
+    // "allowImportingTsExtensions": true, // Explicitly allow '.ts' in imports
+    // "noEmit": true, // If you only use ts-node and don't need build output often
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules"]
+  // Optional: Add ts-node specific settings
+  // "ts-node": {
+  //   "esm": true
+  // }
+}
