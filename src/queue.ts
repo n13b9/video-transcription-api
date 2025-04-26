@@ -4,9 +4,10 @@ import { Redis } from "ioredis";
 const QUEUE_NAME = "transcriptionQueue";
 
 console.log(`[Queue Setup] Checking environment variables...`);
+const redisUrlFromEnv = process.env.REDIS_URL;
 console.log(
-  `[Queue Setup] process.env.REDIS_URL: ${
-    process.env.REDIS_URL ? "SET" : "NOT SET"
+  `[Queue Setup] process.env.REDIS_URL value: ${
+    redisUrlFromEnv ? redisUrlFromEnv.substring(0, 15) + "..." : "<NOT SET>"
   }`
 );
 

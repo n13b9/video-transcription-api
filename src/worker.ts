@@ -37,6 +37,16 @@ if (!GROQ_API_KEY) {
   process.exit(1);
 }
 
+console.log(`[Worker Setup] Checking environment variables...`);
+const redisUrlFromEnv_Worker = process.env.REDIS_URL;
+console.log(
+  `[Worker Setup] process.env.REDIS_URL value: ${
+    redisUrlFromEnv_Worker
+      ? redisUrlFromEnv_Worker.substring(0, 15) + "..."
+      : "<NOT SET>"
+  }`
+);
+
 const redisConnection = new Redis({
   ...(process.env.REDIS_URL
     ? { connectionString: process.env.REDIS_URL }
