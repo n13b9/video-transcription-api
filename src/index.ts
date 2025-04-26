@@ -16,12 +16,11 @@ app.post("/transcribe", async (c) => {
       return c.json({ error: 'Missing or invalid "url" in request body' }, 400);
     }
 
-    // Extract the URL
     const videoUrl = body.url;
     console.log(`Received request to transcribe URL: ${videoUrl}`);
 
     const job = await transcriptionQueue.add("process-video", {
-      videoUrl: videoUrl, // Pass the URL as part of the job data
+      videoUrl: videoUrl,
     });
 
     console.log(`Added job ${job.id} to the queue for URL: ${videoUrl}`);
