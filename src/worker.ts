@@ -10,11 +10,11 @@ import path from "path";
 import os from "os";
 import axios from "axios";
 import { Readable, Writable } from "node:stream";
-import { QUEUE_NAME } from "./queue.ts";
+import { QUEUE_NAME } from "./queue";
 
-import { transcribeAudioWithGroq } from "./utils/groq-api.ts";
-import { createTranscriptChunks } from "./utils/transcript-helpers.ts";
-import { extractYouTubeVideoId } from "./utils/youtube-helpers.ts";
+import { transcribeAudioWithGroq } from "./utils/groq-api";
+import { createTranscriptChunks } from "./utils/transcript-helpers";
+import { extractYouTubeVideoId } from "./utils/youtube-helpers";
 
 import "dotenv/config";
 
