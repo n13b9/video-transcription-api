@@ -1,3 +1,5 @@
+// src/worker.ts
+
 import { Worker, Job } from "bullmq";
 import { Redis, RedisOptions } from "ioredis";
 import { execFile } from "node:child_process";
@@ -30,9 +32,9 @@ const MAX_WORDS_PER_CHUNK = parseInt(
 );
 const MAX_DURATION_MS = parseInt(process.env.MAX_DURATION_MS || "6000", 10);
 
+// *** REMOVED Hardcoded local path fallbacks ***
 const YTDLP_EXECUTABLE_PATH = process.env.YTDLP_PATH || "yt-dlp";
-
-const FFMPEG_DIR_PATH = process.env.FFMPEG_DIR_PATH;
+const FFMPEG_DIR_PATH = process.env.FFMPEG_DIR_PATH; // Rely solely on env var or PATH
 
 const NODE_ENV = process.env.NODE_ENV;
 
@@ -54,14 +56,13 @@ console.log(
 let redisConnection: Redis;
 const redisOptions: RedisOptions = {
   maxRetriesPerRequest: null,
-  family: 0,
+  family: 0, // Keep family option for Railway
 };
 
 if (redisUrlFromEnv_Worker) {
   console.log(
     `[Worker Setup] Connecting using REDIS_URL string with family=0 query param.`
   );
-
   redisConnection = new Redis(
     redisUrlFromEnv_Worker + "?family=0",
     redisOptions
@@ -146,6 +147,7 @@ const processTranscriptionJob = async (
 
       const ytDlpArgs = [
         "--no-check-certificate",
+        // Use --ffmpeg-location only if FFMPEG_DIR_PATH is explicitly set via env var
         ...(FFMPEG_DIR_PATH ? ["--ffmpeg-location", FFMPEG_DIR_PATH] : []),
         "-f",
         "worstaudio/worst",
@@ -168,6 +170,7 @@ const processTranscriptionJob = async (
         console.log(
           `[Worker] Executing: ${YTDLP_EXECUTABLE_PATH} ${ytDlpArgs.join(" ")}`
         );
+        // Prepare environment - only modify PATH if FFMPEG_DIR_PATH is explicitly set
         const processEnv = { ...process.env };
         if (FFMPEG_DIR_PATH) {
           processEnv.PATH = `${FFMPEG_DIR_PATH}:${process.env.PATH}`;
@@ -176,6 +179,7 @@ const processTranscriptionJob = async (
         const { stdout, stderr } = await execFilePromise(
           YTDLP_EXECUTABLE_PATH,
           ytDlpArgs,
+          // Pass modified env only if FFMPEG_DIR_PATH was set
           FFMPEG_DIR_PATH ? { env: processEnv } : {}
         );
 
