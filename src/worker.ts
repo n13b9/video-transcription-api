@@ -1,5 +1,3 @@
-// src/worker.ts
-
 import { Worker, Job } from "bullmq";
 import { Redis, RedisOptions } from "ioredis";
 import { execFile } from "node:child_process";
@@ -33,7 +31,9 @@ const MAX_WORDS_PER_CHUNK = parseInt(
 const MAX_DURATION_MS = parseInt(process.env.MAX_DURATION_MS || "6000", 10);
 
 const YTDLP_EXECUTABLE_PATH = process.env.YTDLP_PATH || "yt-dlp";
+
 const FFMPEG_DIR_PATH = process.env.FFMPEG_DIR_PATH;
+
 const NODE_ENV = process.env.NODE_ENV;
 
 if (!GROQ_API_KEY) {
@@ -52,12 +52,16 @@ console.log(
 );
 
 let redisConnection: Redis;
-const redisOptions: RedisOptions = { maxRetriesPerRequest: null };
+const redisOptions: RedisOptions = {
+  maxRetriesPerRequest: null,
+  family: 0,
+};
 
 if (redisUrlFromEnv_Worker) {
   console.log(
     `[Worker Setup] Connecting using REDIS_URL string with family=0 query param.`
   );
+
   redisConnection = new Redis(
     redisUrlFromEnv_Worker + "?family=0",
     redisOptions
@@ -157,21 +161,22 @@ const processTranscriptionJob = async (
           !YTDLP_EXECUTABLE_PATH ||
           typeof YTDLP_EXECUTABLE_PATH !== "string"
         ) {
-          throw new Error("YTDLP_EXECUTABLE_PATH is not configured correctly.");
+          throw new Error(
+            "YTDLP_EXECUTABLE_PATH is not configured correctly (must be 'yt-dlp' or a valid path)."
+          );
         }
         console.log(
           `[Worker] Executing: ${YTDLP_EXECUTABLE_PATH} ${ytDlpArgs.join(" ")}`
         );
-        const processEnv = {
-          ...process.env,
-          ...(FFMPEG_DIR_PATH && {
-            PATH: `${FFMPEG_DIR_PATH}:${process.env.PATH}`,
-          }),
-        };
+        const processEnv = { ...process.env };
+        if (FFMPEG_DIR_PATH) {
+          processEnv.PATH = `${FFMPEG_DIR_PATH}:${process.env.PATH}`;
+        }
+
         const { stdout, stderr } = await execFilePromise(
           YTDLP_EXECUTABLE_PATH,
           ytDlpArgs,
-          { env: processEnv }
+          FFMPEG_DIR_PATH ? { env: processEnv } : {}
         );
 
         if (stdout) console.log(`[yt-dlp stdout] ${stdout}`);
@@ -225,7 +230,7 @@ const processTranscriptionJob = async (
             stderr?.includes("not found")
           )
             throw new Error(
-              `yt-dlp requires ffmpeg/ffprobe, but they were not found. Ensure they are installed in the deployment environment or FFMPEG_DIR_PATH is set correctly.`
+              `yt-dlp requires ffmpeg/ffprobe, but they were not found in the system PATH. Ensure they are installed via nixpacks.toml.`
             );
           throw new Error(
             `yt-dlp finished, but could not determine or find output file from template ${tempOutputPath}. Check stderr: ${stderr}`
@@ -252,11 +257,11 @@ const processTranscriptionJob = async (
           ytDlpError.stderr?.includes("not found")
         )
           throw new Error(
-            `yt-dlp requires ffmpeg/ffprobe, but they were not found in the system PATH. Ensure they are installed in the deployment environment or FFMPEG_DIR_PATH is set correctly.`
+            `yt-dlp requires ffmpeg/ffprobe, but they were not found in the system PATH. Ensure they are installed via nixpacks.toml.`
           );
         if (ytDlpError.message?.includes("ENOENT"))
           throw new Error(
-            `yt-dlp execution failed: Cannot find yt-dlp executable at ${YTDLP_EXECUTABLE_PATH}. Ensure it's installed and in PATH, or set YTDLP_PATH env var.`
+            `yt-dlp execution failed: Cannot find yt-dlp executable ('${YTDLP_EXECUTABLE_PATH}'). Ensure it's installed via nixpacks.toml and in PATH, or set YTDLP_PATH env var.`
           );
         throw new Error(`yt-dlp execution failed: ${ytDlpError.message}`);
       }
