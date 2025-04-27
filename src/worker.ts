@@ -1,7 +1,5 @@
-// src/worker.ts
-
 import { Worker, Job } from "bullmq";
-import { Redis } from "ioredis"; // Using named import as per user's code
+import { Redis, RedisOptions } from "ioredis"; // Using named import as per user's code
 import { execFile } from "node:child_process";
 import util from "node:util";
 const execFilePromise = util.promisify(execFile);
@@ -11,11 +9,10 @@ import fsp from "fs/promises";
 import path from "path";
 import os from "os";
 import axios from "axios";
-import FormData from "form-data"; // Keeping import as per user's code
+import FormData from "form-data";
 import { Readable, Writable } from "node:stream";
 import { QUEUE_NAME } from "./queue";
 
-// Keeping imports as per user's code
 import { transcribeAudioWithGroq } from "./utils/groq-api";
 import { createTranscriptChunks } from "./utils/transcript-helpers";
 import { extractYouTubeVideoId } from "./utils/youtube-helpers";
@@ -33,8 +30,8 @@ const MAX_WORDS_PER_CHUNK = parseInt(
 );
 const MAX_DURATION_MS = parseInt(process.env.MAX_DURATION_MS || "6000", 10);
 
-const YTDLP_EXECUTABLE_PATH = process.env.YTDLP_PATH || "yt-dlp"; // Defaulting to PATH
-const FFMPEG_DIR_PATH = process.env.FFMPEG_DIR_PATH; // Optional override
+const YTDLP_EXECUTABLE_PATH = process.env.YTDLP_PATH || "yt-dlp";
+const FFMPEG_DIR_PATH = process.env.FFMPEG_DIR_PATH;
 
 if (!GROQ_API_KEY) {
   console.error("FATAL ERROR: GROQ_API_KEY environment variable is not set.");
@@ -51,26 +48,22 @@ console.log(
   }`
 );
 
-// --- Start Minimal Change Here (Redis Connection Logic) ---
 let redisConnection: Redis;
-const redisOptions = { maxRetriesPerRequest: null }; // Base options needed in both cases
+const redisOptions: RedisOptions = { maxRetriesPerRequest: null };
 
 if (redisUrlFromEnv_Worker) {
-  // If URL is provided, pass it as the first argument and options as the second
   console.log(`[Worker Setup] Connecting using REDIS_URL string.`);
   redisConnection = new Redis(redisUrlFromEnv_Worker, redisOptions);
 } else {
-  // If URL is not provided, pass host/port within a single options object
   console.log(
     `[Worker Setup] REDIS_URL not found. Connecting using localhost default.`
   );
   redisConnection = new Redis({
     host: "127.0.0.1",
     port: 6379,
-    ...redisOptions, // Spread the base options
+    ...redisOptions,
   });
 }
-// --- End Minimal Change ---
 
 redisConnection.on("error", (err) =>
   console.error("[Worker] Redis connection error:", err)
