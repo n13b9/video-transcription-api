@@ -9,6 +9,7 @@ import fsp from "fs/promises";
 import path from "path";
 import os from "os";
 import axios from "axios";
+import FormData from "form-data";
 import { Readable, Writable } from "node:stream";
 import { QUEUE_NAME } from "./queue";
 
@@ -29,7 +30,7 @@ const MAX_WORDS_PER_CHUNK = parseInt(
 );
 const MAX_DURATION_MS = parseInt(process.env.MAX_DURATION_MS || "6000", 10);
 
-const YTDLP_EXECUTABLE_PATH = process.env.YTDLP_PATH;
+const YTDLP_EXECUTABLE_PATH = process.env.YTDLP_PATH || "yt-dlp";
 const FFMPEG_DIR_PATH = process.env.FFMPEG_DIR_PATH;
 
 if (!GROQ_API_KEY) {
@@ -47,12 +48,18 @@ console.log(
   }`
 );
 
-const redisConnection = new Redis({
-  ...(process.env.REDIS_URL
-    ? { connectionString: process.env.REDIS_URL }
-    : { host: "127.0.0.1", port: 6379 }),
-  maxRetriesPerRequest: null,
-});
+let redisConnection: Redis;
+if (redisUrlFromEnv_Worker) {
+  redisConnection = new Redis(redisUrlFromEnv_Worker, {
+    maxRetriesPerRequest: null,
+  });
+} else {
+  redisConnection = new Redis({
+    host: "127.0.0.1",
+    port: 6379,
+    maxRetriesPerRequest: null,
+  });
+}
 
 redisConnection.on("error", (err) =>
   console.error("[Worker] Redis connection error:", err)
@@ -123,8 +130,7 @@ const processTranscriptionJob = async (
 
       const ytDlpArgs = [
         "--no-check-certificate",
-        "--ffmpeg-location",
-        FFMPEG_DIR_PATH,
+        ...(FFMPEG_DIR_PATH ? ["--ffmpeg-location", FFMPEG_DIR_PATH] : []),
         "-f",
         "worstaudio/worst",
         "-x",
@@ -146,7 +152,9 @@ const processTranscriptionJob = async (
         );
         const processEnv = {
           ...process.env,
-          PATH: `${FFMPEG_DIR_PATH}:${process.env.PATH}`,
+          ...(FFMPEG_DIR_PATH && {
+            PATH: `${FFMPEG_DIR_PATH}:${process.env.PATH}`,
+          }),
         };
         const { stdout, stderr } = await execFilePromise(
           YTDLP_EXECUTABLE_PATH,
@@ -200,13 +208,12 @@ const processTranscriptionJob = async (
             throw new Error("yt-dlp reported: Video unavailable");
           if (stderr?.includes("Private video"))
             throw new Error("yt-dlp reported: Private video");
-          if (stderr?.includes("ffprobe") && stderr?.includes("not found"))
+          if (
+            (stderr?.includes("ffprobe") || stderr?.includes("ffmpeg")) &&
+            stderr?.includes("not found")
+          )
             throw new Error(
-              `yt-dlp requires ffprobe, but it was not found in the specified --ffmpeg-location directory: ${FFMPEG_DIR_PATH}.`
-            );
-          if (stderr?.includes("ffmpeg") && stderr?.includes("not found"))
-            throw new Error(
-              `yt-dlp requires ffmpeg, but it was not found in the specified --ffmpeg-location directory: ${FFMPEG_DIR_PATH}.`
+              `yt-dlp requires ffmpeg/ffprobe, but they were not found. Ensure they are installed in the deployment environment or FFMPEG_DIR_PATH is set correctly.`
             );
           throw new Error(
             `yt-dlp finished, but could not determine or find output file from template ${tempOutputPath}. Check stderr: ${stderr}`
@@ -228,22 +235,16 @@ const processTranscriptionJob = async (
         if (ytDlpError.stderr?.includes("Private video"))
           throw new Error("yt-dlp reported: Private video");
         if (
-          ytDlpError.stderr?.includes("ffprobe") &&
+          (ytDlpError.stderr?.includes("ffprobe") ||
+            ytDlpError.stderr?.includes("ffmpeg")) &&
           ytDlpError.stderr?.includes("not found")
         )
           throw new Error(
-            `yt-dlp requires ffprobe, but it was not found in the specified --ffmpeg-location directory: ${FFMPEG_DIR_PATH}.`
-          );
-        if (
-          ytDlpError.stderr?.includes("ffmpeg") &&
-          ytDlpError.stderr?.includes("not found")
-        )
-          throw new Error(
-            `yt-dlp requires ffmpeg, but it was not found in the specified --ffmpeg-location directory: ${FFMPEG_DIR_PATH}.`
+            `yt-dlp requires ffmpeg/ffprobe, but they were not found in the system PATH. Ensure they are installed in the deployment environment or FFMPEG_DIR_PATH is set correctly.`
           );
         if (ytDlpError.message?.includes("ENOENT"))
           throw new Error(
-            `yt-dlp execution failed: Cannot find yt-dlp executable at ${YTDLP_EXECUTABLE_PATH}. Ensure it's installed and the path is correct.`
+            `yt-dlp execution failed: Cannot find yt-dlp executable at ${YTDLP_EXECUTABLE_PATH}. Ensure it's installed and in PATH, or set YTDLP_PATH env var.`
           );
         throw new Error(`yt-dlp execution failed: ${ytDlpError.message}`);
       }
@@ -347,24 +348,28 @@ const worker = new Worker(QUEUE_NAME, processTranscriptionJob, {
 worker.on("completed", (job: Job, result: any) => {
   const resultCount = Array.isArray(result) ? result.length : "?";
   console.log(
-    `[Worker] Job ${job.id} completed successfully. Result: ${resultCount} chunks.`
+    `[Worker Events] Job ${job.id} completed successfully. Result: ${resultCount} chunks.`
   );
 });
 worker.on("failed", (job: Job | undefined, err: Error) => {
   const jobId = job ? job.id : "unknown";
-  console.error(`[Worker] Job ${jobId} failed with error: ${err.message}`);
+  console.error(
+    `[Worker Events] Job ${jobId} failed with error: ${err.message}`
+  );
 });
 worker.on("error", (err: Error) => {
-  console.error(`[Worker] Worker encountered an error: ${err.message}`);
+  console.error(`[Worker Events] Worker encountered an error: ${err.message}`);
 });
 
-console.log(`Worker started for queue "${QUEUE_NAME}"... Waiting for jobs.`);
+console.log(
+  `[Worker Setup] Worker started for queue "${QUEUE_NAME}"... Waiting for jobs.`
+);
 
 const shutdown = async () => {
-  console.log("[Worker] Shutting down worker...");
+  console.log("[Worker Shutdown] Shutting down worker...");
   await worker.close();
   await redisConnection.quit();
-  console.log("[Worker] Worker shutdown complete.");
+  console.log("[Worker Shutdown] Worker shutdown complete.");
   process.exit(0);
 };
 process.on("SIGTERM", shutdown);
