@@ -39,7 +39,6 @@ const redisConnectionOptions: RedisOptions = {
     }
     return delay;
   },
-  // *** ADDED family: 0 for dual-stack DNS lookup ***
   family: 0,
 };
 

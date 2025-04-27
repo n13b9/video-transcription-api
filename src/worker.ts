@@ -1,5 +1,7 @@
+// src/worker.ts
+
 import { Worker, Job } from "bullmq";
-import { Redis, RedisOptions } from "ioredis"; // Using named import as per user's code
+import { Redis, RedisOptions } from "ioredis";
 import { execFile } from "node:child_process";
 import util from "node:util";
 const execFilePromise = util.promisify(execFile);
@@ -32,6 +34,7 @@ const MAX_DURATION_MS = parseInt(process.env.MAX_DURATION_MS || "6000", 10);
 
 const YTDLP_EXECUTABLE_PATH = process.env.YTDLP_PATH || "yt-dlp";
 const FFMPEG_DIR_PATH = process.env.FFMPEG_DIR_PATH;
+const NODE_ENV = process.env.NODE_ENV;
 
 if (!GROQ_API_KEY) {
   console.error("FATAL ERROR: GROQ_API_KEY environment variable is not set.");
@@ -52,8 +55,13 @@ let redisConnection: Redis;
 const redisOptions: RedisOptions = { maxRetriesPerRequest: null };
 
 if (redisUrlFromEnv_Worker) {
-  console.log(`[Worker Setup] Connecting using REDIS_URL string.`);
-  redisConnection = new Redis(redisUrlFromEnv_Worker, redisOptions);
+  console.log(
+    `[Worker Setup] Connecting using REDIS_URL string with family=0 query param.`
+  );
+  redisConnection = new Redis(
+    redisUrlFromEnv_Worker + "?family=0",
+    redisOptions
+  );
 } else {
   console.log(
     `[Worker Setup] REDIS_URL not found. Connecting using localhost default.`
