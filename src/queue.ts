@@ -1,46 +1,80 @@
 import { Queue } from "bullmq";
-import { Redis } from "ioredis";
+import { Redis, RedisOptions } from "ioredis";
 
-const QUEUE_NAME = "transcriptionQueue";
+const QUEUE_NAME = "transcription";
 
-console.log(`[Queue Setup] Checking environment variables...`);
 const redisUrlFromEnv = process.env.REDIS_URL;
+const nodeEnv = process.env.NODE_ENV;
+
+console.log(`[Queue Setup] NODE_ENV: ${nodeEnv}`);
 console.log(
   `[Queue Setup] process.env.REDIS_URL value: ${
-    redisUrlFromEnv ? redisUrlFromEnv.substring(0, 15) + "..." : "<NOT SET>"
+    redisUrlFromEnv
+      ? redisUrlFromEnv.substring(0, 15) + "..."
+      : "<NOT SET or undefined>"
   }`
 );
 
-const redisConnection = new Redis({
-  ...(process.env.REDIS_URL
-    ? { connectionString: process.env.REDIS_URL }
-    : { host: "127.0.0.1", port: 6379 }),
+if (!redisUrlFromEnv && nodeEnv === "production") {
+  console.error(
+    "[Queue Setup] FATAL ERROR: REDIS_URL environment variable is missing in production environment!"
+  );
+  throw new Error("FATAL ERROR: REDIS_URL environment variable is missing.");
+}
+
+const redisConnectionOptions: RedisOptions = {
   maxRetriesPerRequest: null,
-});
+  retryStrategy(times: number): number | null {
+    const delay = Math.min(times * 100, 2000);
+    console.warn(
+      `[Queue Setup] Redis connection failed, retrying in ${delay}ms (attempt ${times})`
+    );
+    if (times > 10) {
+      console.error(
+        "[Queue Setup] Redis connection failed after multiple retries. Giving up."
+      );
+      return null;
+    }
+    return delay;
+  },
+};
 
-console.log(
-  `[Queue Setup] Attempting Redis connection with options: ${
-    process.env.REDIS_URL ? "Using REDIS_URL" : "Using localhost default"
-  }`
-);
+let redisConnection: Redis;
+
+if (redisUrlFromEnv) {
+  console.log(`[Queue Setup] Connecting using REDIS_URL string.`);
+  redisConnection = new Redis(redisUrlFromEnv, redisConnectionOptions);
+} else {
+  console.log(
+    `[Queue Setup] REDIS_URL not found. Connecting using localhost default (intended for local dev only).`
+  );
+  redisConnection = new Redis({
+    host: "127.0.0.1",
+    port: 6379,
+    ...redisConnectionOptions,
+  });
+}
 
 redisConnection.on("error", (err) => {
-  console.error("Redis connection error:", err);
+  if ((err as NodeJS.ErrnoException).code === "ENOTFOUND") {
+    console.error(
+      `[Queue Setup] Redis connection error: Could not resolve Redis hostname. Check network/DNS settings or REDIS_URL validity. Error:`,
+      err.message
+    );
+  } else {
+    console.error("[Queue Setup] Redis connection error:", err);
+  }
 });
 
 redisConnection.on("connect", () => {
-  console.log("Connected to Redis successfully.");
+  console.log("[Queue Setup] Connected to Redis successfully.");
 });
 
 const transcriptionQueue = new Queue(QUEUE_NAME, {
   connection: redisConnection,
   defaultJobOptions: {
-    removeOnComplete: {
-      age: 3600,
-    },
-    removeOnFail: {
-      count: 1000,
-    },
+    removeOnComplete: { age: 3600 },
+    removeOnFail: { count: 1000 },
   },
 });
 
