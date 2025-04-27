@@ -1,3 +1,5 @@
+// src/queue.ts
+
 import { Queue } from "bullmq";
 import { Redis, RedisOptions } from "ioredis";
 
@@ -37,6 +39,8 @@ const redisConnectionOptions: RedisOptions = {
     }
     return delay;
   },
+  // *** ADDED family: 0 for dual-stack DNS lookup ***
+  family: 0,
 };
 
 let redisConnection: Redis;

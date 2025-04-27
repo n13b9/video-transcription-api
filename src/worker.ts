@@ -33,7 +33,7 @@ const MAX_WORDS_PER_CHUNK = parseInt(
 );
 const MAX_DURATION_MS = parseInt(process.env.MAX_DURATION_MS || "6000", 10);
 
-const YTDLP_EXECUTABLE_PATH = process.env.YTDLP_PATH || "yt-dlp"; // Defaulting to PATH as per last working state
+const YTDLP_EXECUTABLE_PATH = process.env.YTDLP_PATH || "yt-dlp"; // Defaulting to PATH
 const FFMPEG_DIR_PATH = process.env.FFMPEG_DIR_PATH; // Optional override
 
 if (!GROQ_API_KEY) {
@@ -51,9 +51,9 @@ console.log(
   }`
 );
 
-// --- Minimal Change Here (Redis Connection Logic) ---
+// --- Start Minimal Change Here (Redis Connection Logic) ---
 let redisConnection: Redis;
-const redisOptions = { maxRetriesPerRequest: null }; // Define base options
+const redisOptions = { maxRetriesPerRequest: null }; // Base options needed in both cases
 
 if (redisUrlFromEnv_Worker) {
   // If URL is provided, pass it as the first argument and options as the second
