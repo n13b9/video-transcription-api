@@ -1,5 +1,3 @@
-// src/queue.ts
-
 import { Queue } from "bullmq";
 import { Redis, RedisOptions } from "ioredis";
 
@@ -39,14 +37,18 @@ const redisConnectionOptions: RedisOptions = {
     }
     return delay;
   },
-  family: 0,
 };
 
 let redisConnection: Redis;
 
 if (redisUrlFromEnv) {
-  console.log(`[Queue Setup] Connecting using REDIS_URL string.`);
-  redisConnection = new Redis(redisUrlFromEnv, redisConnectionOptions);
+  console.log(
+    `[Queue Setup] Connecting using REDIS_URL string with family=0 query param.`
+  );
+  redisConnection = new Redis(
+    redisUrlFromEnv + "?family=0",
+    redisConnectionOptions
+  );
 } else {
   console.log(
     `[Queue Setup] REDIS_URL not found. Connecting using localhost default (intended for local dev only).`
@@ -54,6 +56,7 @@ if (redisUrlFromEnv) {
   redisConnection = new Redis({
     host: "127.0.0.1",
     port: 6379,
+    family: 4,
     ...redisConnectionOptions,
   });
 }
