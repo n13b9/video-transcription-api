@@ -1,5 +1,3 @@
-// src/worker.ts
-
 import { Worker, Job } from "bullmq";
 import { Redis, RedisOptions } from "ioredis";
 import { execFile } from "node:child_process";
@@ -32,10 +30,8 @@ const MAX_WORDS_PER_CHUNK = parseInt(
 );
 const MAX_DURATION_MS = parseInt(process.env.MAX_DURATION_MS || "6000", 10);
 
-// *** REMOVED Hardcoded local path fallbacks ***
 const YTDLP_EXECUTABLE_PATH = process.env.YTDLP_PATH || "yt-dlp";
-const FFMPEG_DIR_PATH = process.env.FFMPEG_DIR_PATH; // Rely solely on env var or PATH
-
+const FFMPEG_DIR_PATH = process.env.FFMPEG_DIR_PATH;
 const NODE_ENV = process.env.NODE_ENV;
 
 if (!GROQ_API_KEY) {
@@ -56,7 +52,7 @@ console.log(
 let redisConnection: Redis;
 const redisOptions: RedisOptions = {
   maxRetriesPerRequest: null,
-  family: 0, // Keep family option for Railway
+  family: 0,
 };
 
 if (redisUrlFromEnv_Worker) {
@@ -124,7 +120,8 @@ const processTranscriptionJob = async (
   job: Job
 ): Promise<TranscriptChunk[]> => {
   const originalUrl = job.data.videoUrl;
-  let tempAudioPath: string | null = null;
+  let inputForGroq: string | null = null;
+  let tempAudioPathToDelete: string | null = null;
 
   console.log(`[Worker] Received job ${job.id} for URL: ${originalUrl}`);
 
@@ -147,7 +144,6 @@ const processTranscriptionJob = async (
 
       const ytDlpArgs = [
         "--no-check-certificate",
-        // Use --ffmpeg-location only if FFMPEG_DIR_PATH is explicitly set via env var
         ...(FFMPEG_DIR_PATH ? ["--ffmpeg-location", FFMPEG_DIR_PATH] : []),
         "-f",
         "worstaudio/worst",
@@ -163,24 +159,21 @@ const processTranscriptionJob = async (
           !YTDLP_EXECUTABLE_PATH ||
           typeof YTDLP_EXECUTABLE_PATH !== "string"
         ) {
-          throw new Error(
-            "YTDLP_EXECUTABLE_PATH is not configured correctly (must be 'yt-dlp' or a valid path)."
-          );
+          throw new Error("YTDLP_EXECUTABLE_PATH is not configured correctly.");
         }
         console.log(
           `[Worker] Executing: ${YTDLP_EXECUTABLE_PATH} ${ytDlpArgs.join(" ")}`
         );
-        // Prepare environment - only modify PATH if FFMPEG_DIR_PATH is explicitly set
-        const processEnv = { ...process.env };
-        if (FFMPEG_DIR_PATH) {
-          processEnv.PATH = `${FFMPEG_DIR_PATH}:${process.env.PATH}`;
-        }
-
+        const processEnv = {
+          ...process.env,
+          ...(FFMPEG_DIR_PATH && {
+            PATH: `${FFMPEG_DIR_PATH}:${process.env.PATH}`,
+          }),
+        };
         const { stdout, stderr } = await execFilePromise(
           YTDLP_EXECUTABLE_PATH,
           ytDlpArgs,
-          // Pass modified env only if FFMPEG_DIR_PATH was set
-          FFMPEG_DIR_PATH ? { env: processEnv } : {}
+          { env: processEnv }
         );
 
         if (stdout) console.log(`[yt-dlp stdout] ${stdout}`);
@@ -234,15 +227,16 @@ const processTranscriptionJob = async (
             stderr?.includes("not found")
           )
             throw new Error(
-              `yt-dlp requires ffmpeg/ffprobe, but they were not found in the system PATH. Ensure they are installed via nixpacks.toml.`
+              `yt-dlp requires ffmpeg/ffprobe, but they were not found. Ensure they are installed in the deployment environment or FFMPEG_DIR_PATH is set correctly.`
             );
           throw new Error(
             `yt-dlp finished, but could not determine or find output file from template ${tempOutputPath}. Check stderr: ${stderr}`
           );
         }
-        tempAudioPath = finalDownloadedPath;
+        inputForGroq = finalDownloadedPath;
+        tempAudioPathToDelete = finalDownloadedPath;
         console.log(
-          `[Worker] Job ${job.id}: YouTube audio downloaded successfully to ${tempAudioPath}`
+          `[Worker] Job ${job.id}: YouTube audio downloaded successfully to ${inputForGroq}`
         );
       } catch (ytDlpError: any) {
         console.error(
@@ -261,7 +255,7 @@ const processTranscriptionJob = async (
           ytDlpError.stderr?.includes("not found")
         )
           throw new Error(
-            `yt-dlp requires ffmpeg/ffprobe, but they were not found in the system PATH. Ensure they are installed via nixpacks.toml.`
+            `yt-dlp requires ffmpeg/ffprobe, but they were not found in the system PATH. Ensure they are installed in the deployment environment or FFMPEG_DIR_PATH is set correctly.`
           );
         if (ytDlpError.message?.includes("ENOENT"))
           throw new Error(
@@ -271,55 +265,18 @@ const processTranscriptionJob = async (
       }
     } else {
       console.warn(
-        `[Worker] Job ${job.id}: Not a YouTube URL or ID extraction failed. Attempting direct download from: ${originalUrl}`
+        `[Worker] Job ${job.id}: Not a YouTube URL. Passing URL directly to Groq API: ${originalUrl}`
       );
-      let extension = path.extname(new URL(originalUrl).pathname).slice(1);
-      if (!extension || extension.length > 5) {
-        extension = "bin";
-      }
-      tempAudioPath = path.join(
-        tempDir,
-        `job_${job.id}_direct_${Date.now()}.${extension}`
-      );
-      console.log(
-        `[Worker] Job ${job.id}: Downloading direct URL content to ${tempAudioPath}...`
-      );
-      const response = await axios({
-        method: "get",
-        url: originalUrl,
-        responseType: "stream",
-        timeout: 30000,
-      });
-      if (response.status < 200 || response.status >= 300)
-        throw new Error(
-          `Direct download failed with status code: ${response.status}`
-        );
-      const contentType = response.headers["content-type"];
-      console.log(
-        `[Worker] Job ${job.id}: Direct URL Content-Type: ${contentType}`
-      );
-      if (
-        contentType &&
-        !contentType.startsWith("audio/") &&
-        !contentType.startsWith("video/") &&
-        contentType !== "application/octet-stream"
-      ) {
-        console.warn(
-          `[Worker] Job ${job.id}: Content-Type (${contentType}) might not be suitable for transcription.`
-        );
-      }
-      const writable = fs.createWriteStream(tempAudioPath);
-      await pipeStreamManually(response.data as Readable, writable);
-      console.log(
-        `[Worker] Job ${job.id}: Direct URL content downloaded successfully.`
-      );
+      inputForGroq = originalUrl;
+      tempAudioPathToDelete = null;
     }
 
-    if (!tempAudioPath) {
-      throw new Error("Temporary audio file path is not set.");
+    if (!inputForGroq) {
+      throw new Error("Input for Groq (file path or URL) is not set.");
     }
+
     const transcriptionResult = (await transcribeAudioWithGroq(
-      tempAudioPath,
+      inputForGroq,
       GROQ_API_KEY,
       GROQ_API_URL,
       WHISPER_MODEL
@@ -342,17 +299,17 @@ const processTranscriptionJob = async (
     );
     throw error;
   } finally {
-    if (tempAudioPath) {
+    if (tempAudioPathToDelete) {
       try {
         console.log(
-          `[Worker] Job ${job.id}: Cleaning up temporary file ${tempAudioPath}...`
+          `[Worker] Job ${job.id}: Cleaning up temporary file ${tempAudioPathToDelete}...`
         );
-        await fsp.unlink(tempAudioPath);
+        await fsp.unlink(tempAudioPathToDelete);
         console.log(`[Worker] Job ${job.id}: Temporary file deleted.`);
       } catch (unlinkError) {
         if ((unlinkError as NodeJS.ErrnoException)?.code !== "ENOENT") {
           console.error(
-            `[Worker] Job ${job.id}: Error deleting temporary file ${tempAudioPath}`,
+            `[Worker] Job ${job.id}: Error deleting temporary file ${tempAudioPathToDelete}`,
             unlinkError
           );
         }
