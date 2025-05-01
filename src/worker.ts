@@ -3,6 +3,7 @@ import { Redis, RedisOptions } from "ioredis";
 import { execFile } from "node:child_process";
 import util from "node:util";
 const execFilePromise = util.promisify(execFile);
+import { URL } from "node:url";
 
 import fs from "fs";
 import fsp from "fs/promises";
@@ -45,38 +46,92 @@ console.log(
   `[Worker Setup] process.env.REDIS_URL value: ${
     redisUrlFromEnv_Worker
       ? redisUrlFromEnv_Worker.substring(0, 15) + "..."
-      : "<NOT SET>"
+      : "<NOT SET or undefined>"
   }`
 );
 
-let redisConnection: Redis;
-const redisOptions: RedisOptions = {
+if (!redisUrlFromEnv_Worker && NODE_ENV === "production") {
+  console.error(
+    "[Worker Setup] FATAL ERROR: REDIS_URL environment variable is missing in production environment!"
+  );
+  throw new Error("FATAL ERROR: REDIS_URL environment variable is missing.");
+}
+
+const baseRedisOptions_Worker: RedisOptions = {
   maxRetriesPerRequest: null,
-  family: 0,
+  connectTimeout: 15000,
+  retryStrategy(times: number): number | null {
+    const delay = Math.min(times * 150, 3000);
+    console.warn(
+      `[Worker Setup] Redis connection failed, retrying in ${delay}ms (attempt ${times})`
+    );
+    if (times > 10) {
+      console.error(
+        "[Worker Setup] Redis connection failed after multiple retries. Giving up."
+      );
+      return null;
+    }
+    return delay;
+  },
 };
+
+let redisConnectionOptions_Worker: RedisOptions;
 
 if (redisUrlFromEnv_Worker) {
   console.log(
-    `[Worker Setup] Connecting using REDIS_URL string with family=0 query param.`
+    `[Worker Setup] Parsing REDIS_URL and connecting with explicit options including family: 0.`
   );
-  redisConnection = new Redis(
-    redisUrlFromEnv_Worker + "?family=0",
-    redisOptions
-  );
+  try {
+    const parsedUrl = new URL(redisUrlFromEnv_Worker);
+    redisConnectionOptions_Worker = {
+      host: parsedUrl.hostname,
+      port: parseInt(parsedUrl.port, 10),
+      password: parsedUrl.password,
+      family: 0,
+      ...baseRedisOptions_Worker,
+    };
+  } catch (e) {
+    console.error("[Worker Setup] FATAL ERROR: Could not parse REDIS_URL.", e);
+    throw new Error("FATAL ERROR: Could not parse REDIS_URL.");
+  }
 } else {
   console.log(
-    `[Worker Setup] REDIS_URL not found. Connecting using localhost default.`
+    `[Worker Setup] REDIS_URL not found. Connecting using localhost default (intended for local dev only).`
   );
-  redisConnection = new Redis({
+  redisConnectionOptions_Worker = {
     host: "127.0.0.1",
     port: 6379,
-    ...redisOptions,
-  });
+    family: 4,
+    ...baseRedisOptions_Worker,
+  };
 }
 
-redisConnection.on("error", (err) =>
-  console.error("[Worker] Redis connection error:", err)
-);
+console.log(`[Worker Setup] Config object being passed to Redis constructor:`, {
+  host: redisConnectionOptions_Worker.host,
+  port: redisConnectionOptions_Worker.port,
+  family: redisConnectionOptions_Worker.family,
+  hasPassword: !!redisConnectionOptions_Worker.password,
+});
+
+const redisConnection = new Redis(redisConnectionOptions_Worker);
+
+redisConnection.on("error", (err) => {
+  if ((err as NodeJS.ErrnoException).code === "ENOTFOUND") {
+    console.error(
+      `[Worker] Redis connection error: Could not resolve Redis hostname (${
+        (err as any).host || "N/A"
+      }). Check network/DNS settings or REDIS_URL validity. Error:`,
+      err.message
+    );
+  } else if ((err as NodeJS.ErrnoException).code === "ETIMEDOUT") {
+    console.error(
+      `[Worker] Redis connection error: Connection timed out. Check network latency or Redis service status. Error:`,
+      err.message
+    );
+  } else {
+    console.error("[Worker] Redis connection error:", err);
+  }
+});
 redisConnection.on("connect", () =>
   console.log("[Worker] Connected to Redis successfully.")
 );

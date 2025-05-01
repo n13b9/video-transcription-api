@@ -1,7 +1,6 @@
-// src/queue.ts
-
 import { Queue } from "bullmq";
 import { Redis, RedisOptions } from "ioredis";
+import { URL } from "node:url";
 
 const QUEUE_NAME = "transcription";
 
@@ -24,10 +23,11 @@ if (!redisUrlFromEnv && nodeEnv === "production") {
   throw new Error("FATAL ERROR: REDIS_URL environment variable is missing.");
 }
 
-const redisConnectionOptions: RedisOptions = {
+const baseRedisOptions: RedisOptions = {
   maxRetriesPerRequest: null,
+  connectTimeout: 15000,
   retryStrategy(times: number): number | null {
-    const delay = Math.min(times * 100, 2000);
+    const delay = Math.min(times * 150, 3000);
     console.warn(
       `[Queue Setup] Redis connection failed, retrying in ${delay}ms (attempt ${times})`
     );
@@ -39,36 +39,54 @@ const redisConnectionOptions: RedisOptions = {
     }
     return delay;
   },
-
-  connectTimeout: 10000,
 };
 
-let redisConnection: Redis;
+let redisConnectionOptions: RedisOptions;
 
 if (redisUrlFromEnv) {
   console.log(
-    `[Queue Setup] Connecting using REDIS_URL string with family=0 query param.`
+    `[Queue Setup] Parsing REDIS_URL and connecting with explicit options including family: 0.`
   );
-  redisConnection = new Redis(
-    redisUrlFromEnv + "?family=0",
-    redisConnectionOptions
-  );
+  try {
+    const parsedUrl = new URL(redisUrlFromEnv);
+    redisConnectionOptions = {
+      host: parsedUrl.hostname,
+      port: parseInt(parsedUrl.port, 10),
+      password: parsedUrl.password,
+      family: 0,
+      ...baseRedisOptions,
+    };
+  } catch (e) {
+    console.error("[Queue Setup] FATAL ERROR: Could not parse REDIS_URL.", e);
+    throw new Error("FATAL ERROR: Could not parse REDIS_URL.");
+  }
 } else {
   console.log(
     `[Queue Setup] REDIS_URL not found. Connecting using localhost default (intended for local dev only).`
   );
-  redisConnection = new Redis({
+  redisConnectionOptions = {
     host: "127.0.0.1",
     port: 6379,
     family: 4,
-    ...redisConnectionOptions,
-  });
+    ...baseRedisOptions,
+  };
 }
+
+console.log(`[Queue Setup] Config object being passed to Redis constructor:`, {
+  host: redisConnectionOptions.host,
+  port: redisConnectionOptions.port,
+  family: redisConnectionOptions.family,
+  hasPassword: !!redisConnectionOptions.password,
+});
+
+const redisConnection = new Redis(redisConnectionOptions);
 
 redisConnection.on("error", (err) => {
   if ((err as NodeJS.ErrnoException).code === "ENOTFOUND") {
     console.error(
-      `[Queue Setup] Redis connection error: Could not resolve Redis hostname. Check network/DNS settings or REDIS_URL validity. Error:`,
+      `[Queue Setup] Redis connection error: Could not resolve Redis hostname (${
+        (err as any).host || "N/A"
+      }). Check network/DNS settings or REDIS_URL validity. Error:`,
       err.message
     );
   } else if ((err as NodeJS.ErrnoException).code === "ETIMEDOUT") {
