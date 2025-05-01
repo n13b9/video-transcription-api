@@ -1,3 +1,5 @@
+// src/queue.ts
+
 import { Queue } from "bullmq";
 import { Redis, RedisOptions } from "ioredis";
 
@@ -37,6 +39,8 @@ const redisConnectionOptions: RedisOptions = {
     }
     return delay;
   },
+
+  connectTimeout: 10000,
 };
 
 let redisConnection: Redis;
@@ -65,6 +69,11 @@ redisConnection.on("error", (err) => {
   if ((err as NodeJS.ErrnoException).code === "ENOTFOUND") {
     console.error(
       `[Queue Setup] Redis connection error: Could not resolve Redis hostname. Check network/DNS settings or REDIS_URL validity. Error:`,
+      err.message
+    );
+  } else if ((err as NodeJS.ErrnoException).code === "ETIMEDOUT") {
+    console.error(
+      `[Queue Setup] Redis connection error: Connection timed out. Check network latency or Redis service status. Error:`,
       err.message
     );
   } else {
